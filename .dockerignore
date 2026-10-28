@@ -1,0 +1,20 @@
+**/node_modules
+.git
+.gitignore
+**/.env
+**/.env.*
+!**/.env.example
+client/build
+server/data
+server/sessions
+parking-permit
+docker-compose.yml
+Dockerfile
+*.md
+# accidental shell-redirect leftovers
+server/{
+server/{routes,data,sessions}
+server/console.log('Installed
+server/console.error(e.message))
+server/db - Copy.js
+server/cleanup.js

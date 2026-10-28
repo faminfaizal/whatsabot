@@ -1,0 +1,49 @@
+# whatsabot (multi-user sender)  → http://10.49.39.144:8058
+# parking permit (own number)    → http://10.49.39.144:8059
+#
+#   cp .env.whatsabot.example .env.whatsabot   (and .env.permit.example → .env.permit), fill in
+#   docker compose up -d --build
+#
+# Both apps hold a WhatsApp login, so each runs as exactly one container.
+name: whatsabot
+
+services:
+  whatsabot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: whatsabot:latest
+    container_name: whatsabot
+    restart: unless-stopped
+    env_file: .env.whatsabot
+    environment:
+      TZ: Asia/Kuala_Lumpur
+      PORT: "5000"
+      CLIENT_URL: http://${BIND_IP:-10.49.39.144}:8058
+    ports:
+      - "${BIND_IP:-10.49.39.144}:8058:5000"
+    volumes:
+      - whatsabot_data:/app/server/data           # SQLite db, settings, contacts CSV, logs
+      - whatsabot_sessions:/app/server/sessions   # WhatsApp logins (one folder per user)
+
+  parking:
+    build:
+      context: ./parking-permit/parkpermit
+      dockerfile: Dockerfile
+    image: parking-permit:latest
+    container_name: parking-permit
+    restart: unless-stopped
+    env_file: .env.permit
+    environment:
+      TZ: Asia/Kuala_Lumpur
+    ports:
+      - "${BIND_IP:-10.49.39.144}:8059:5100"
+    volumes:
+      - permit_data:/data                         # permit.db, settings.json, WhatsApp login, letters, logo/map
+    # Chromium renders the letters; its renderer needs more than Docker's 64 MB default /dev/shm headroom
+    shm_size: "512m"
+
+volumes:
+  whatsabot_data:
+  whatsabot_sessions:
+  permit_data:

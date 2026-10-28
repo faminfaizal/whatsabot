@@ -1,0 +1,4 @@
+# WhatsApp login, applicant data, letters, uploaded images
+data/
+# Secrets
+.env
