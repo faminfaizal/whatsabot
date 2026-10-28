@@ -17,6 +17,7 @@ const DEFAULT_LETTERHEAD = Object.freeze({
 const DEFAULTS = Object.freeze({
   admin_group_id: '',
   approval_timeout_hours: 36,
+  max_requests_per_day: 5,
   admin_approvers: [],
   letterhead: DEFAULT_LETTERHEAD,
 });
@@ -53,6 +54,12 @@ function validate(input = {}) {
     const h = Number(input.approval_timeout_hours);
     if (!Number.isInteger(h) || h < 1 || h > MAX_TIMEOUT_HOURS) errors.push(`Approval timeout must be a whole number of hours from 1 to ${MAX_TIMEOUT_HOURS}`);
     else value.approval_timeout_hours = h;
+  }
+
+  if ('max_requests_per_day' in input) {
+    const n = Number(input.max_requests_per_day);
+    if (!Number.isInteger(n) || n < 1 || n > 50) errors.push('Requests per applicant per day must be a whole number from 1 to 50');
+    else value.max_requests_per_day = n;
   }
 
   if ('admin_approvers' in input) {

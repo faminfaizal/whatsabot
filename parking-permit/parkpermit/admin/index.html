@@ -87,6 +87,12 @@
         </label>
         <p class="hint">1–48 hours. Applies to new requests only.</p>
 
+        <h2>Spam guard</h2>
+        <label class="narrow">Requests one phone number may submit per day
+          <input name="max_requests_per_day" type="number" min="1" max="50" step="1" required>
+        </label>
+        <p class="hint">Stops one number flooding the admin group. A number sending more than 10 PERMIT messages a minute is ignored. Counts reset if the bot restarts.</p>
+
         <h2>Approvers</h2>
         <table class="table approvers">
           <thead><tr><th>Name (printed on the letter)</th><th>Phone number</th><th>LID <span class="muted">(optional)</span></th><th></th></tr></thead>

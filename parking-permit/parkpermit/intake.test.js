@@ -29,6 +29,8 @@ function harness(opts = {}) {
     getTimeoutHours: () => 36,
     onCreated: async ref => { created.push(ref); if (opts.failOnCreated) throw new Error('group down'); },
     today: () => TODAY,
+    ...(opts.getMaxPerDay ? { getMaxPerDay: opts.getMaxPerDay } : {}),
+    ...(opts.now ? { now: opts.now } : {}),
     log: { error: (...a) => logs.push(a.join(' ')) },
   });
   return { approvals, intake, sent, created, logs };
@@ -166,4 +168,40 @@ test('db failure tells client to retry and logs no PII', async () => {
   await h.intake.handle(dm(good));
   assert.match(h.sent[0].text, /couldn’t record your request/);
   assert.ok(!h.logs[0].includes('Ahmad'));
+});
+
+// ── spam guard ───────────────────────────────────────────
+const variant = n => good.replace('wxy-1234', `ab${n}-1234`);   // a different car each time, so the pending-duplicate check doesn't fire
+
+test('daily cap: the Nth+1 request in 24 h is refused with a message, then allowed again after 24 h', async () => {
+  let t = Date.parse('2026-10-25T00:00:00Z');
+  const h = harness({ getMaxPerDay: () => 3, now: () => t });
+  for (let i = 1; i <= 3; i++) { await h.intake.handle(dm(variant(i))); t += 60_000; }
+  assert.equal(h.created.length, 3);
+  await h.intake.handle(dm(variant(4)));
+  assert.equal(h.created.length, 3, 'fourth not created');
+  assert.match(h.sent.at(-1).text, /today’s limit of 3 permit requests/);
+  t += 24 * 3600_000;
+  await h.intake.handle(dm(variant(5)));
+  assert.equal(h.created.length, 4, 'allowed again after the window');
+});
+
+test('daily cap counts only created requests: duplicates and invalid messages do not use it up', async () => {
+  const h = harness({ getMaxPerDay: () => 2 });
+  await h.intake.handle(dm(good));
+  await h.intake.handle(dm(good));                                  // duplicate of the pending one
+  await h.intake.handle(dm('PERMIT\nName: x'));                     // invalid
+  await h.intake.handle(dm(variant(2)));
+  assert.equal(h.created.length, 2);
+});
+
+test('flood guard: after 10 PERMIT messages in a minute the number is ignored silently', async () => {
+  const h = harness({ getMaxPerDay: () => 100 });
+  for (let i = 0; i < 10; i++) await h.intake.handle(dm('PERMIT'));
+  const before = h.sent.length;
+  assert.equal(await h.intake.handle(dm('PERMIT')), true, 'still reported as handled');
+  assert.equal(h.sent.length, before, 'no reply sent');
+  // other numbers are unaffected
+  await h.intake.handle({ from: '60199999999@c.us', fromMe: false, body: 'PERMIT' });
+  assert.ok(h.sent.length > before);
 });

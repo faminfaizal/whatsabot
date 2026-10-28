@@ -17,7 +17,7 @@ const SITI_PN = '60123456789@s.whatsapp.net';
 const PII = ['Ahmad Faiz', 'WXY1234', 'WXY 1234', '60111111111', 'Night shift duty', 'Bay B2 only'];
 const quiet = { log() {}, warn() {}, error() {} };
 
-function world({ autoAck = true } = {}) {
+function world({ autoAck = true, now } = {}) {
   const db = new Database(':memory:');
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-'));
   const settings = {
@@ -44,6 +44,7 @@ function world({ autoAck = true } = {}) {
   const workflow = createPermitWorkflow({
     client, db, outDir, log: quiet,
     getSettings: () => settings,
+    ...(now ? { now } : {}),
     renderPdf: async html => { renders.push(html); return Buffer.from('%PDF-1.4 wf'); },
   });
 
@@ -139,4 +140,45 @@ test('onReady lists groups when none is set; handleMessage never throws', async 
   wf.stop();
   assert.ok(logged.some(l => l.includes(GROUP)));
   assert.equal(await wf.handleMessage(null), false);
+});
+
+// ── outage notice ────────────────────────────────────────
+test('back online after a long outage: admin group is told how long, with no applicant details', async () => {
+  let t = Date.parse('2026-10-28T08:00:00Z');
+  const w = world({ now: () => t });
+  w.db.prepare("INSERT INTO bot_state (key, value) VALUES ('last_online', ?)").run(String(t - 35 * 60_000));
+  await w.workflow.onReady();
+  w.workflow.stop();
+  const note = w.toGroup().find(s => /offline/.test(textOf(s)));
+  assert.ok(note, 'notice posted');
+  assert.match(textOf(note), /offline for about 35 minutes \(28 Oct, 3:25 PM – 28 Oct, 4:00 PM\)/);
+  assert.match(textOf(note), /may need to send their request again/);
+  for (const p of PII) assert.ok(!textOf(note).includes(p));
+});
+
+test('no outage notice for a short blip, a first start, or when no group is set; hours wording for long gaps', async () => {
+  const t = Date.parse('2026-10-28T08:00:00Z');
+  const run = async (lastOnlineAgoMs, { group = GROUP } = {}) => {
+    const w = world({ now: () => t });
+    w.settings.admin_group_id = group;
+    if (lastOnlineAgoMs != null) w.db.prepare("INSERT INTO bot_state (key, value) VALUES ('last_online', ?)").run(String(t - lastOnlineAgoMs));
+    await w.workflow.onReady();
+    w.workflow.stop();
+    return w.toGroup().filter(s => /offline/.test(textOf(s)));
+  };
+  assert.equal((await run(5 * 60_000)).length, 0, 'blip');
+  assert.equal((await run(null)).length, 0, 'first start');
+  assert.equal((await run(60 * 60_000, { group: '' })).length, 0, 'no group yet');
+  assert.match(textOf((await run(5 * 3600_000))[0]), /about 5 hours/);
+});
+
+test('stop() records the last moment online, so a quick restart does not alert', async () => {
+  let t = Date.parse('2026-10-28T08:00:00Z');
+  const w = world({ now: () => t });
+  await w.workflow.onReady();
+  w.workflow.stop();
+  t += 3 * 60_000;                      // reconnects 3 minutes later
+  await w.workflow.onReady();
+  w.workflow.stop();
+  assert.equal(w.toGroup().filter(s => /offline/.test(textOf(s))).length, 0);
 });

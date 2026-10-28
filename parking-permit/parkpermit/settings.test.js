@@ -80,3 +80,16 @@ test('a corrupt settings file does not crash: last good copy (or defaults) is us
     assert.equal(createSettingsStore(file).get().approval_timeout_hours, 36);
   } finally { console.error = orig; }
 });
+
+test('max_requests_per_day: default 5, whole number 1–50', () => {
+  const st = store();
+  assert.equal(st.get().max_requests_per_day, 5);
+  assert.equal(st.save({ max_requests_per_day: '12' }).ok, true);
+  assert.equal(st.get().max_requests_per_day, 12);
+  for (const bad of [0, 51, 2.5, 'x']) {
+    const r = st.save({ max_requests_per_day: bad });
+    assert.equal(r.ok, false, String(bad));
+    assert.match(r.errors[0], /Requests per applicant per day/);
+  }
+  assert.equal(st.get().max_requests_per_day, 12, 'rejected input changes nothing');
+});

@@ -95,11 +95,12 @@ Two tables, so a purge is a clean row delete instead of nulling columns.
   - [x] Logo and map upload to `data/letterhead/` (type from magic bytes, size limits, server-chosen file name).
   - [x] Preview letter (sample data + unsaved form letterhead, no db writes).
   - [x] Request log from `approval_log` only (`listLog()` + test).
+- [x] **Spam guard + outage notice (2026-10-28).** `limiter.js`; intake allows `max_requests_per_day` (setting, default 5, 1–50, in-memory so it resets on restart) created requests per number per 24 h and silently ignores a number past 10 PERMIT messages/min; `permitWorkflow` stores `last_online` (heartbeat each minute, and on disconnect/stop) in `bot_state` and, when the bot reconnects after 10+ minutes away, posts the duration to the admin group (no applicant details). +8 tests (152 total).
 - [ ] 10. **On-server verification.** Run with a test admin group and a test phone number before going live.
-  - [ ] Copy `parkpermit/` to the server; `.env` from `.env.example`; `node --test` passes (real-Chrome tests run if Chrome is found).
-  - [ ] `pm2 start ecosystem.config.js`; the admin page opens from another PC on the LAN; sign in; Status shows "Chrome found".
-  - [ ] Link WhatsApp from the admin page with the bot's own number. Restart the process: it reconnects without a QR.
-  - [ ] Startup with no `admin_group_id`: group IDs are printed in `pm2 logs` (and the picker lists them). Set the ID; the queued request is posted within 5 minutes.
+  - [ ] Deploy per `DEPLOY.md`: `.env.permit` filled in, `docker compose up -d --build`; `docker compose ps` shows `parking-permit` (healthy).
+  - [ ] The admin page opens from another PC at http://10.49.39.144:8059; sign in; Status shows "Chrome found".
+  - [ ] Link WhatsApp from the admin page with the bot's own number. `docker compose restart parking`: it reconnects without a QR.
+  - [ ] Startup with no `admin_group_id`: group IDs are printed in `docker logs parking-permit` (and the picker lists them). Set the ID; the queued request is posted within 5 minutes.
   - [ ] Bare `PERMIT` returns the help and template. An invalid template returns the errors and template. A valid one returns the ref, and the summary appears in the group.
   - [ ] Each approver sends one test `APPROVE`. If anyone is refused, add the `@lid` shown in the log to their approver entry.
   - [ ] Quote-reply `APPROVE Bay B2` delivers the PDF to the test phone. Open it and check the letterhead, map and one page.
@@ -111,7 +112,16 @@ Two tables, so a purge is a clean row delete instead of nulling columns.
   - [ ] Restart while a request is pending: it can still be approved after the restart.
   - [ ] Delivery failure: briefly disconnect, approve, reconnect, and confirm the letter arrives within 5 minutes.
   - [ ] After purge: `approval_requests` is empty for that ref, the letters folder has no file, and the group summary shows as deleted.
-  - [ ] `pm2 logs` contains no client name, car reg or phone number.
+  - [ ] `docker logs parking-permit` contains no client name, car reg or phone number.
+  - [ ] Spam guard: one test number sends valid requests until the daily cap (default 5, Approvals page): the next gets "today’s limit" and no new request reaches the group. 11 quick PERMIT messages in a minute: replies stop.
+  - [ ] Outage notice: `docker compose stop parking`, wait 11+ minutes, `docker compose start parking`: the admin group gets "offline for about N minutes" (and a restart under 10 minutes does not).
+
+## Not built (ideas, lower priority)
+- Show refused approvers (the `@lid` from the log) on the Status tab with an "Add" button.
+- Reminder in the admin group at about half the timeout for requests nobody has decided.
+- Applicant commands `STATUS PP-0042` / `CANCEL`.
+- Cooldown after a rejection for the same applicant and car.
+- Automatic backup of the `permit_data` volume; per-admin logins / audit of settings changes.
 
 ## Known limits
 - The purge covers the **server only**. Copies on the client's and admins' phones are out of the bot's control.

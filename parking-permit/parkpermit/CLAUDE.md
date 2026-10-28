@@ -7,7 +7,7 @@ number**, separate from whatsabot (it only borrows whatsabot's installed package
 3. The bot sends the applicant a PDF approval letter, the rejection reason, or an expiry notice.
 4. The applicant's PII is purged; a PII-free log is kept.
 
-Status: built and tested locally (139 tests, incl. real Chrome PDF renders). Remaining: on-server
+Status: built and tested locally (152 tests, incl. real Chrome PDF renders). Remaining: on-server
 verification with a test group and test phone (`tasks/todo.md` → task 10). Read `tasks/lessons.md` first.
 
 ## Environment (landmines)
@@ -32,6 +32,7 @@ verification with a test group and test phone (`tasks/todo.md` → task 10). Rea
 | `baileysAdapter.js` | Baileys ↔ whatsapp-web.js shapes: `wrapIncoming(msg)`, `sendText`, `sendFile`, `deleteMessage`, acks, `getChats`. |
 | `permitWorkflow.js` | `createPermitWorkflow({client, db, getSettings, outDir, renderPdf})` → `{handleMessage, onReady, stop, runMaintenance, approvals, letters}`. |
 | `settings.js` | `data/settings.json`: `get()` re-reads on change; `save(input)` validates + merges; `setImage(kind, path)`. |
+| `limiter.js` | Sliding-window counter; used by `intake.js` for the daily cap (setting `max_requests_per_day`) and the 10-messages-a-minute flood guard. |
 | `pdf.js` | `createPdfRenderer({chromePath})` → `renderPdf(html) → Buffer`; `findChrome()`; `countPdfPages()`. |
 | `deps.js` | `load(name)`: normal require, else whatsabot's server `node_modules`. |
 | `admin/` | Admin page: plain HTML/CSS/JS, no build step, no inline script/style (strict CSP). |
@@ -65,6 +66,7 @@ PENDING ──approve──▶ APPROVED ─┐
 {
   "admin_group_id": "120363…@g.us",
   "approval_timeout_hours": 36,
+  "max_requests_per_day": 5,
   "admin_approvers": [{ "name": "Siti Aminah", "number": "60123456789", "lid": "optional…@lid" }],
   "letterhead": { "org_name": "", "address": "line1\nline2", "phone": "", "email": "",
                   "logo_path": "", "map_path": "", "title": "Building Parking Permit", "terms": ["…"], "footer": "" }
@@ -95,6 +97,7 @@ Requires Node 20+ (`node --test` discovery).
 - Never purge the PII row while its PDF exists. Purge order: group message (best effort) → file (must succeed) → row.
 - Every user/admin string in the letter HTML goes through `esc()`. `pdf.js` adds a CSP blocking scripts and all
   non-`data:` loads to every page it renders.
+- `permitWorkflow` keeps `bot_state.last_online` (heartbeat 60 s, set on stop); on reconnect after ≥10 min it tells the admin group the outage length (no applicant details).
 - `maintenance.runOnce()` order: expire → post → deliver → purge → stray-file sweep; steps isolated; no overlap.
 - The admin API never returns `approval_requests` data or server file paths.
 - Add a test for every behaviour change. After any letter layout change, render a real PDF (letter.test.js does,

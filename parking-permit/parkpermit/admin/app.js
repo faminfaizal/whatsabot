@@ -146,6 +146,7 @@ function fillSettings(s) {
   const f = $('#settings-form');
   f.admin_group_id.value = s.admin_group_id || '';
   f.approval_timeout_hours.value = s.approval_timeout_hours;
+  f.max_requests_per_day.value = s.max_requests_per_day;
   $('#approver-rows').replaceChildren(...(s.admin_approvers.length ? s.admin_approvers : [{}]).map(approverRow));
 
   const lf = $('#letter-form');
@@ -183,6 +184,7 @@ $('#settings-form').addEventListener('submit', async e => {
     const s = await api('PUT', '/api/settings', {
       admin_group_id: f.admin_group_id.value,
       approval_timeout_hours: Number(f.approval_timeout_hours.value),
+      max_requests_per_day: Number(f.max_requests_per_day.value),
       admin_approvers: approvers,
     });
     fillSettings(s);

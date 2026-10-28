@@ -10,7 +10,11 @@
 //   client.on('message', async msg => { if (await intake.handle(msg)) return; /* existing handlers */ });
 'use strict';
 
+const { createLimiter } = require('./limiter');
+
 const MAX_PERMIT_DAYS = 365;
+const DEFAULT_MAX_PER_DAY = 5;          // permit requests one WhatsApp number may create per 24 h
+const MAX_MESSAGES_PER_MINUTE = 10;     // PERMIT messages one number may send per minute before being ignored
 
 const TEMPLATE = [
   'PERMIT',
@@ -115,6 +119,7 @@ const MSG = {
   help: 'To apply for a building parking permit, copy the next message, fill it in and send it back.',
   errors: errs => `❌ Your permit request couldn’t be submitted:\n${errs.map(e => `• ${e}`).join('\n')}\n\nPlease copy the next message, fix the details and send it again.`,
   duplicate: (ref, car) => `You already have a pending request *${ref}* for ${car}. You’ll receive the letter here once it’s reviewed.`,
+  dailyLimit: max => `You’ve reached today’s limit of ${max} permit request${max === 1 ? '' : 's'}. Please try again tomorrow, or contact building management.`,
   failed: 'Sorry, we couldn’t record your request right now. Please try again later.',
   ack: (ref, d, hours) => [
     `✅ Request received: *${ref}*`,
@@ -128,12 +133,21 @@ const MSG = {
 };
 
 function createIntake({ approvals, send, getTimeoutHours, onCreated = async () => {},
+                        getMaxPerDay = () => DEFAULT_MAX_PER_DAY, now = Date.now,
                         today = todayMYT, maxDays = MAX_PERMIT_DAYS, log = console }) {
+  const perMinute = createLimiter({ windowMs: 60_000, now });
+  const perDay = createLimiter({ windowMs: 24 * 3600_000, now });
+
   // Returns true if the message was a permit request (handled), false to pass it on.
   async function handle(msg) {
     const from = msg && msg.from;
     if (!from || msg.fromMe || from.endsWith('@g.us') || from === 'status@broadcast') return false;
     if (!isPermitMessage(msg.body)) return false;
+
+    // Flood guard: past the per-minute allowance the number is ignored (no reply, so the bot can't be
+    // made to send a flood of messages back)
+    if (perMinute.count(from) >= MAX_MESSAGES_PER_MINUTE) return true;
+    perMinute.add(from);
 
     const raw = parsePermit(msg.body);
     if (!Object.keys(raw).length) {
@@ -155,6 +169,12 @@ function createIntake({ approvals, send, getTimeoutHours, onCreated = async () =
       return true;
     }
 
+    const maxPerDay = Number(getMaxPerDay());
+    if (maxPerDay > 0 && perDay.count(from) >= maxPerDay) {
+      await send(from, MSG.dailyLimit(maxPerDay));
+      return true;
+    }
+
     const hours = Number(getTimeoutHours());
     let ref;
     try {
@@ -165,6 +185,7 @@ function createIntake({ approvals, send, getTimeoutHours, onCreated = async () =
       return true;
     }
 
+    perDay.add(from);
     await send(from, MSG.ack(ref, v.data, hours));
     try { await onCreated(ref); }
     catch (e) { log.error(`[permit] onCreated failed for ${ref}:`, e.message); }
